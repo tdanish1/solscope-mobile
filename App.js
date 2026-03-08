@@ -471,9 +471,11 @@ function TokenScreen({ symbol, onBack }) {
         const res = await fetch(`${API}/token/${symbol}`);
         if (res.ok) {
           const d = await res.json();
-          setData(d);
-          setLoading(false);
-          return;
+          if (d && d.sentimentScore > 0 && d.sentimentScore !== 50) {
+            setData(d);
+            setLoading(false);
+            return;
+          }
         }
       } catch (e) {}
       setData(MOCK_TOKEN(symbol));
@@ -772,7 +774,7 @@ export default function App() {
       const res = await fetch(`${API}/feed?limit=20`);
       if (res.ok) {
         const data = await res.json();
-       if (data.signals?.length > 4) setSignals(data.signals);
+        if (data.signals?.length > 4) setSignals(data.signals);
       }
     } catch (e) {}
     setLoading(false);
@@ -783,39 +785,15 @@ export default function App() {
   }, [loadFeed]);
 
   const connectWallet = useCallback(async () => {
-    // Native wallet picker
+    // Open Phantom wallet directly
     try {
-      const mwa = await import('@solana-mobile/mobile-wallet-adapter-protocol');
-      if (mwa && mwa.transact) {
-        const authResult = await mwa.transact(async (wallet) => {
-          return await wallet.authorize({
-            identity: {
-              name: 'SolScope',
-              uri: 'https://solscope.xyz',
-              icon: 'https://solscope.xyz/icon.png',
-            },
-            cluster: 'mainnet-beta',
-          });
-        });
-        if (authResult?.accounts?.[0]) {
-          const addr = typeof authResult.accounts[0].address === 'string'
-            ? authResult.accounts[0].address
-            : 'Connected';
-          setWalletAddress(addr);
-          return;
-        }
-      }
-    } catch (e) {
-      // Fallback to Phantom deep link
-      try {
-        await Linking.openURL('https://phantom.app/ul/v1/connect?app_url=https%3A%2F%2Fsolscope.xyz&redirect_link=https%3A%2F%2Fsolscope.xyz');
-        return;
-      } catch (e2) {}
-    }
-    // No wallet found
+      await Linking.openURL('phantom://');
+      return;
+    } catch (e) {}
+    // Phantom not installed
     Alert.alert(
       'Connect Wallet',
-      'Install Phantom or another Solana wallet to connect.',
+      'Install a Solana wallet to connect.',
       [
         { text: 'Get Phantom', onPress: () => Linking.openURL('https://phantom.app/download') },
         { text: 'Later', style: 'cancel' },
