@@ -833,11 +833,23 @@ export default function App() {
 
       setWalletAddress('Connected');
     } catch (e) {
-      Alert.alert(
-        'Wallet Connection Failed',
-        e?.message || 'Could not connect to a Solana mobile wallet.'
-      );
-    }
+  const msg = String(e?.message || '');
+
+  const userCancelled =
+    msg.toLowerCase().includes('cancelled by user') ||
+    msg.toLowerCase().includes('canceled by user') ||
+    msg.toLowerCase().includes('local association cancelled') ||
+    msg.toLowerCase().includes('local association canceled');
+
+  if (userCancelled) {
+    return;
+  }
+
+  Alert.alert(
+    'Wallet Connection Failed',
+    msg || 'Could not connect to a Solana mobile wallet.'
+  );
+}
   }, []);
 
   const disconnectWallet = useCallback(() => {
