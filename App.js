@@ -772,7 +772,7 @@ export default function App() {
       const res = await fetch(`${API}/feed?limit=20`);
       if (res.ok) {
         const data = await res.json();
-        if (data.signals?.length > 0) setSignals(data.signals);
+       if (data.signals?.length > 4) setSignals(data.signals);
       }
     } catch (e) {}
     setLoading(false);
@@ -783,16 +783,39 @@ export default function App() {
   }, [loadFeed]);
 
   const connectWallet = useCallback(async () => {
-    // Try to open Phantom directly
+    // Native wallet picker
     try {
-      await Linking.openURL('https://phantom.app/ul/v1/connect?app_url=https%3A%2F%2Fsolscope.xyz&redirect_link=https%3A%2F%2Fsolscope.xyz');
-      setTimeout(() => setWalletAddress('7xK9...mR3'), 3000);
-      return;
-    } catch (e) {}
-    // If that fails, show install options
+      const mwa = await import('@solana-mobile/mobile-wallet-adapter-protocol');
+      if (mwa && mwa.transact) {
+        const authResult = await mwa.transact(async (wallet) => {
+          return await wallet.authorize({
+            identity: {
+              name: 'SolScope',
+              uri: 'https://solscope.xyz',
+              icon: 'https://solscope.xyz/icon.png',
+            },
+            cluster: 'mainnet-beta',
+          });
+        });
+        if (authResult?.accounts?.[0]) {
+          const addr = typeof authResult.accounts[0].address === 'string'
+            ? authResult.accounts[0].address
+            : 'Connected';
+          setWalletAddress(addr);
+          return;
+        }
+      }
+    } catch (e) {
+      // Fallback to Phantom deep link
+      try {
+        await Linking.openURL('https://phantom.app/ul/v1/connect?app_url=https%3A%2F%2Fsolscope.xyz&redirect_link=https%3A%2F%2Fsolscope.xyz');
+        return;
+      } catch (e2) {}
+    }
+    // No wallet found
     Alert.alert(
-      'No Wallet Found',
-      'Install a Solana wallet to connect.',
+      'Connect Wallet',
+      'Install Phantom or another Solana wallet to connect.',
       [
         { text: 'Get Phantom', onPress: () => Linking.openURL('https://phantom.app/download') },
         { text: 'Later', style: 'cancel' },
