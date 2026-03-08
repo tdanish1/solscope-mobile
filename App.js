@@ -8,12 +8,12 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
-  Linking,
   Alert,
   Image,
   Platform,
 } from 'react-native';
 import 'react-native-get-random-values';
+import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
 
 const API = 'https://solscope-production.up.railway.app/api';
 
@@ -385,26 +385,27 @@ function FeedScreen({
   onTokenPress,
   walletAddress,
   onConnectWallet,
+  onDisconnectWallet,
 }) {
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: STATUS_BAR_HEIGHT + 14 }]}>
         <View>
-  <View style={styles.brandRow}>
-    <Text style={styles.headerTitleWhite}>Sol</Text>
-    <Text style={styles.headerTitleGold}>Scope</Text>
-  </View>
-  <Text style={styles.headerSubGold}>SEE SOLANA CLEARLY</Text>
-</View>
+          <View style={styles.brandRow}>
+            <Text style={styles.headerTitleWhite}>Sol</Text>
+            <Text style={styles.headerTitleGold}>Scope</Text>
+          </View>
+          <Text style={styles.headerSubGold}>SEE SOLANA CLEARLY</Text>
+        </View>
 
         <View style={styles.headerRight}>
           {walletAddress ? (
-            <View style={styles.walletPill}>
+            <TouchableOpacity onPress={onDisconnectWallet} style={styles.walletPill} activeOpacity={0.7}>
               <View style={[styles.statusDot, { backgroundColor: C.green }]} />
               <Text style={styles.walletPillText}>
                 {walletAddress.slice(0, 4)}..{walletAddress.slice(-3)}
               </Text>
-            </View>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity
               onPress={onConnectWallet}
@@ -471,13 +472,30 @@ function TokenScreen({ symbol, onBack }) {
         const res = await fetch(`${API}/token/${symbol}`);
         if (res.ok) {
           const d = await res.json();
-          if (d && d.sentimentScore > 0 && d.sentimentScore !== 50) {
+
+          const hasMeaningfulTokenData =
+            d &&
+            (
+              d.sentimentScore !== 50 ||
+              d.netflowUsd !== 0 ||
+              d.holdingsChangePct !== 0 ||
+              d.smartMoneyCount !== 0 ||
+              (d.holderDistribution &&
+                (
+                  d.holderDistribution.smartMoney !== 0 ||
+                  d.holderDistribution.retail !== 0 ||
+                  d.holderDistribution.exchange !== 0
+                ))
+            );
+
+          if (hasMeaningfulTokenData) {
             setData(d);
             setLoading(false);
             return;
           }
         }
       } catch (e) {}
+
       setData(MOCK_TOKEN(symbol));
       setLoading(false);
     })();
@@ -657,28 +675,28 @@ function AlertsScreen() {
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: STATUS_BAR_HEIGHT + 14 }]}>
         <View>
-  <Text
-    style={{
-      fontSize: 22,
-      fontWeight: '700',
-      color: C.text,
-      letterSpacing: -0.7,
-    }}
-  >
-    Alerts
-  </Text>
-  <Text
-    style={{
-      fontSize: 10,
-      color: C.dim,
-      letterSpacing: 2.4,
-      marginTop: 4,
-      fontWeight: '700',
-    }}
-  >
-    CUSTOM INTELLIGENCE
-  </Text>
-</View>
+          <Text
+            style={{
+              fontSize: 22,
+              fontWeight: '700',
+              color: C.text,
+              letterSpacing: -0.7,
+            }}
+          >
+            Alerts
+          </Text>
+          <Text
+            style={{
+              fontSize: 10,
+              color: C.dim,
+              letterSpacing: 2.4,
+              marginTop: 4,
+              fontWeight: '700',
+            }}
+          >
+            CUSTOM INTELLIGENCE
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -750,8 +768,8 @@ function AlertsScreen() {
           <Text style={styles.cardDesc}>
             SolScope monitors Solana tokens using Helius for blockchain events,
             Jupiter for market context, and Nansen for smart money intelligence.
-            When conviction changes are detected, you get notified instantly. No
-            noise. Only signal.
+            When conviction changes are detected, SolScope sends an alert with the
+            relevant token context.
           </Text>
         </View>
 
@@ -785,20 +803,45 @@ export default function App() {
   }, [loadFeed]);
 
   const connectWallet = useCallback(async () => {
-    // Open Phantom wallet directly
     try {
-      await Linking.openURL('phantom://');
-      return;
-    } catch (e) {}
-    // Phantom not installed
-    Alert.alert(
-      'Connect Wallet',
-      'Install a Solana wallet to connect.',
-      [
-        { text: 'Get Phantom', onPress: () => Linking.openURL('https://phantom.app/download') },
-        { text: 'Later', style: 'cancel' },
-      ]
-    );
+      const authResult = await transact(async (wallet) => {
+        return await wallet.authorize({
+          chain: 'solana:mainnet',
+          identity: {
+            name: 'SolScope',
+            uri: 'https://solscope.xyz',
+            icon: 'favicon.png',
+          },
+        });
+      });
+
+      const firstAccount = authResult?.accounts?.[0];
+
+      let address = null;
+      if (typeof firstAccount?.address === 'string') {
+        address = firstAccount.address;
+      } else if (firstAccount?.publicKey?.toBase58) {
+        address = firstAccount.publicKey.toBase58();
+      } else if (firstAccount?.publicKey) {
+        address = String(firstAccount.publicKey);
+      }
+
+      if (address) {
+        setWalletAddress(address);
+        return;
+      }
+
+      setWalletAddress('Connected');
+    } catch (e) {
+      Alert.alert(
+        'Wallet Connection Failed',
+        e?.message || 'Could not connect to a Solana mobile wallet.'
+      );
+    }
+  }, []);
+
+  const disconnectWallet = useCallback(() => {
+    setWalletAddress(null);
   }, []);
 
   const onTokenPress = (symbol) => {
@@ -833,6 +876,7 @@ export default function App() {
           onTokenPress={onTokenPress}
           walletAddress={walletAddress}
           onConnectWallet={connectWallet}
+          onDisconnectWallet={disconnectWallet}
         />
       )}
 
@@ -879,32 +923,29 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   brandRow: {
-  flexDirection: 'row',
-  alignItems: 'baseline',
-},
-
-headerTitleWhite: {
-  fontSize: 30,
-  fontWeight: '800',
-  color: '#f2efea',
-  letterSpacing: -1.2,
-},
-
-headerTitleGold: {
-  fontSize: 30,
-  fontWeight: '800',
-  color: C.gold,
-  letterSpacing: -1.2,
-  marginLeft: 2,
-},
-
-headerSubGold: {
-  fontSize: 10,
-  color: '#9f7a2f',
-  letterSpacing: 5,
-  fontWeight: '700',
-  marginTop: 6,
-},
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  headerTitleWhite: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#f2efea',
+    letterSpacing: -1.2,
+  },
+  headerTitleGold: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: C.gold,
+    letterSpacing: -1.2,
+    marginLeft: 2,
+  },
+  headerSubGold: {
+    fontSize: 10,
+    color: '#9f7a2f',
+    letterSpacing: 5,
+    fontWeight: '700',
+    marginTop: 6,
+  },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
 
   connectBtn: {
