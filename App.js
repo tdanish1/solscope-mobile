@@ -53,6 +53,25 @@ const LOCAL_TOKEN_ICONS = {
   WIF: require('./assets/tokens/wif.png'),
 };
 
+const BRAND_LOGOS = {
+  nansen: require('./assets/brands/nansen.png'),
+  helius: require('./assets/brands/helius.png'),
+  jupiter: require('./assets/brands/jupiter.png'),
+};
+
+function PoweredByBadge() {
+  return (
+    <View style={styles.poweredByContainer}>
+      <Text style={styles.poweredByText}>Powered by</Text>
+      <View style={styles.poweredByLogos}>
+        <View style={styles.brandLogoWrap}><Image source={BRAND_LOGOS.nansen} style={[styles.brandLogo, { width: 46, height: 46 }]} resizeMode="contain" /></View>
+        <View style={styles.brandLogoWrap}><Image source={BRAND_LOGOS.helius} style={styles.brandLogo} resizeMode="contain" /></View>
+        <View style={styles.brandLogoWrap}><Image source={BRAND_LOGOS.jupiter} style={styles.brandLogo} resizeMode="contain" /></View>
+      </View>
+    </View>
+  );
+}
+
 function TokenIcon({ symbol, size = 32 }) {
   const upper = (symbol || '').toUpperCase();
   const localSource = LOCAL_TOKEN_ICONS[upper];
@@ -134,136 +153,6 @@ const timeAgo = (ts) => {
   return Math.floor(s / 86400) + 'd ago';
 };
 
-const MOCK_SIGNALS = [
-  {
-    id: '1',
-    type: 'CONVICTION_UP',
-    emoji: '🔥',
-    label: 'Conviction Increasing',
-    symbol: 'JUP',
-    headline: 'Smart money conviction increasing on JUP',
-    timestamp: Date.now() - 180000,
-    details: {
-      netflowUsd: 4200000,
-      holdingsChangePct: 26,
-      sentimentScore: 78,
-      confidence: 'HIGH',
-      fundsAccumulating: 4,
-    },
-  },
-  {
-    id: '2',
-    type: 'SMART_MONEY_ENTRY',
-    emoji: '🐋',
-    label: 'Smart Money Entry',
-    symbol: 'DRIFT',
-    headline: 'New smart money positions detected in DRIFT',
-    timestamp: Date.now() - 420000,
-    details: {
-      newPositions: 3,
-      netflowUsd: 2100000,
-      holdingsChangePct: 31,
-      confidence: 'HIGH',
-    },
-  },
-  {
-    id: '3',
-    type: 'CONVICTION_DOWN',
-    emoji: '⚠️',
-    label: 'Conviction Decreasing',
-    symbol: 'BONK',
-    headline: 'Smart money reducing exposure to BONK',
-    timestamp: Date.now() - 900000,
-    details: {
-      netflowUsd: -3800000,
-      holdingsChangePct: -19,
-      sentimentScore: 34,
-      confidence: 'HIGH',
-    },
-  },
-  {
-    id: '4',
-    type: 'SENTIMENT_SPIKE',
-    emoji: '⚡',
-    label: 'Sentiment Spike',
-    symbol: 'PYTH',
-    headline: 'Sentiment surging for PYTH (+18 pts)',
-    timestamp: Date.now() - 1500000,
-    details: {
-      previousScore: 52,
-      currentScore: 70,
-      delta: 18,
-      sentimentScore: 70,
-    },
-  },
-  {
-    id: '5',
-    type: 'SMART_MONEY_EXIT',
-    emoji: '🚪',
-    label: 'Smart Money Exit',
-    symbol: 'WIF',
-    headline: 'Smart money closing positions in WIF',
-    timestamp: Date.now() - 2400000,
-    details: {
-      netflowUsd: -2500000,
-      holdingsChangePct: -22,
-      confidence: 'MEDIUM',
-    },
-  },
-  {
-    id: '6',
-    type: 'CONVICTION_UP',
-    emoji: '🔥',
-    label: 'Conviction Increasing',
-    symbol: 'SOL',
-    headline: 'Smart money conviction increasing on SOL',
-    timestamp: Date.now() - 3600000,
-    details: {
-      netflowUsd: 8400000,
-      holdingsChangePct: 12,
-      sentimentScore: 82,
-      confidence: 'HIGH',
-      fundsAccumulating: 7,
-    },
-  },
-];
-
-const MOCK_TOKEN = (sym) => ({
-  symbol: sym,
-  price:
-    sym === 'SOL'
-      ? 138.42
-      : sym === 'JUP'
-      ? 1.24
-      : sym === 'DRIFT'
-      ? 1.15
-      : sym === 'BONK'
-      ? 0.0000312
-      : sym === 'PYTH'
-      ? 0.38
-      : sym === 'WIF'
-      ? 2.41
-      : 0.89,
-  sentimentScore:
-    sym === 'JUP'
-      ? 78
-      : sym === 'BONK'
-      ? 34
-      : sym === 'SOL'
-      ? 82
-      : sym === 'DRIFT'
-      ? 71
-      : sym === 'WIF'
-      ? 38
-      : 65,
-  trend: sym === 'BONK' ? 'DISTRIBUTION' : sym === 'WIF' ? 'DISTRIBUTION' : 'ACCUMULATION',
-  confidence: 'HIGH',
-  netflowUsd: sym === 'BONK' ? -3800000 : sym === 'WIF' ? -2500000 : 4200000,
-  holdingsChangePct: sym === 'BONK' ? -19 : sym === 'WIF' ? -22 : 26,
-  holderDistribution: { smartMoney: 18, retail: 67, exchange: 15 },
-  smartMoneyCount: sym === 'JUP' ? 4 : sym === 'SOL' ? 7 : 3,
-  recentSignals: MOCK_SIGNALS.filter((s) => s.symbol === sym).slice(0, 3),
-});
 
 function SignalCard({ signal, onPress }) {
   const positive =
@@ -456,7 +345,7 @@ function FeedScreen({
           </View>
         )}
 
-        <Text style={styles.attribution}>Data: Nansen · Helius · Jupiter</Text>
+        <PoweredByBadge />
       </ScrollView>
     </View>
   );
@@ -465,6 +354,7 @@ function FeedScreen({
 function TokenScreen({ symbol, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -472,31 +362,13 @@ function TokenScreen({ symbol, onBack }) {
         const res = await fetch(`${API}/token/${symbol}`);
         if (res.ok) {
           const d = await res.json();
-
-          const hasMeaningfulTokenData =
-            d &&
-            (
-              d.sentimentScore !== 50 ||
-              d.netflowUsd !== 0 ||
-              d.holdingsChangePct !== 0 ||
-              d.smartMoneyCount !== 0 ||
-              (d.holderDistribution &&
-                (
-                  d.holderDistribution.smartMoney !== 0 ||
-                  d.holderDistribution.retail !== 0 ||
-                  d.holderDistribution.exchange !== 0
-                ))
-            );
-
-          if (hasMeaningfulTokenData) {
-            setData(d);
-            setLoading(false);
-            return;
-          }
+          setData(d);
+        } else {
+          setError(true);
         }
-      } catch (e) {}
-
-      setData(MOCK_TOKEN(symbol));
+      } catch (e) {
+        setError(true);
+      }
       setLoading(false);
     })();
   }, [symbol]);
@@ -512,7 +384,19 @@ function TokenScreen({ symbol, onBack }) {
     );
   }
 
-  if (!data) return null;
+  if (error || !data) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.loadingContainer, { paddingTop: STATUS_BAR_HEIGHT }]}>
+          <Text style={{ fontSize: 32, marginBottom: 12 }}>📡</Text>
+          <Text style={styles.loadingText}>No data available for {symbol}</Text>
+          <TouchableOpacity onPress={onBack} style={{ marginTop: 20 }}>
+            <Text style={{ color: C.gold, fontSize: 14 }}>← Back to feed</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -621,7 +505,7 @@ function TokenScreen({ symbol, onBack }) {
           </>
         )}
 
-        <Text style={styles.attribution}>Data: Nansen · Helius · Jupiter</Text>
+        <PoweredByBadge />
       </ScrollView>
     </View>
   );
@@ -773,7 +657,7 @@ function AlertsScreen() {
           </Text>
         </View>
 
-        <Text style={styles.attribution}>Data: Nansen · Helius · Jupiter</Text>
+        <PoweredByBadge />
       </ScrollView>
     </View>
   );
@@ -781,7 +665,7 @@ function AlertsScreen() {
 
 export default function App() {
   const [tab, setTab] = useState('feed');
-  const [signals, setSignals] = useState(MOCK_SIGNALS);
+  const [signals, setSignals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   const [walletAddress, setWalletAddress] = useState(null);
@@ -792,7 +676,7 @@ export default function App() {
       const res = await fetch(`${API}/feed?limit=20`);
       if (res.ok) {
         const data = await res.json();
-        if (data.signals?.length > 4) setSignals(data.signals);
+        if (data.signals?.length > 0) setSignals(data.signals);
       }
     } catch (e) {}
     setLoading(false);
@@ -1334,13 +1218,33 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 
-  attribution: {
-    textAlign: 'center',
+  poweredByContainer: {
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 12,
+    paddingVertical: 8,
+  },
+  poweredByText: {
     fontSize: 10,
     color: C.dim,
-    marginTop: 20,
-    marginBottom: 8,
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  poweredByLogos: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  brandLogoWrap: {
+    width: 80,
+    alignItems: 'center',
+  },
+  brandLogo: {
+    width: 36,
+    height: 36,
+    opacity: 0.7,
   },
 
   bottomNav: {
