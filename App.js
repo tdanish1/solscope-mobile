@@ -47,6 +47,8 @@ const REMOTE_TOKEN_ICONS = {
   BONK: 'https://arweave.net/hQiPZOsRZXGXBJd_82PhVdlM_hACsT_q6wqwf5cSY7I',
 };
 
+const ICON_CACHE = new Map();
+
 const LOCAL_TOKEN_ICONS = {
   DRIFT: require('./assets/tokens/drift.png'),
   PYTH: require('./assets/tokens/pyth.png'),
@@ -72,42 +74,36 @@ function PoweredByBadge() {
   );
 }
 
-function TokenIcon({ symbol, size = 32 }) {
+function TokenIcon({ symbol, mint, size = 32 }) {
   const upper = (symbol || '').toUpperCase();
   const localSource = LOCAL_TOKEN_ICONS[upper];
   const remoteUri = REMOTE_TOKEN_ICONS[upper];
   const [remoteFailed, setRemoteFailed] = useState(false);
+  const [dynamicUri, setDynamicUri] = useState(ICON_CACHE.get(mint) || null);
+  const [dynamicFailed, setDynamicFailed] = useState(false);
 
-  if (localSource) {
-    return (
-      <Image
-        source={localSource}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size * 0.28,
-          backgroundColor: '#1a1920',
-        }}
-        resizeMode="cover"
-      />
-    );
-  }
+  useEffect(() => {
+    if (!mint || localSource || remoteUri) return;
+    if (ICON_CACHE.has(mint)) { setDynamicUri(ICON_CACHE.get(mint)); return; }
+    fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`)
+      .then(r => r.json())
+      .then(data => {
+        const url = data.pairs?.[0]?.info?.imageUrl;
+        if (url) { ICON_CACHE.set(mint, url); setDynamicUri(url); }
+      })
+      .catch(() => {});
+  }, [mint, localSource, remoteUri]);
 
-  if (remoteUri && !remoteFailed) {
-    return (
-      <Image
-        source={{ uri: remoteUri }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size * 0.28,
-          backgroundColor: '#1a1920',
-        }}
-        resizeMode="cover"
-        onError={() => setRemoteFailed(true)}
-      />
-    );
-  }
+  const imgStyle = {
+    width: size,
+    height: size,
+    borderRadius: size * 0.28,
+    backgroundColor: '#1a1920',
+  };
+
+  if (localSource) return <Image source={localSource} style={imgStyle} resizeMode="cover" />;
+  if (remoteUri && !remoteFailed) return <Image source={{ uri: remoteUri }} style={imgStyle} resizeMode="cover" onError={() => setRemoteFailed(true)} />;
+  if (dynamicUri && !dynamicFailed) return <Image source={{ uri: dynamicUri }} style={imgStyle} resizeMode="cover" onError={() => setDynamicFailed(true)} />;
 
   const hue = upper
     ? upper.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360
@@ -124,13 +120,7 @@ function TokenIcon({ symbol, size = 32 }) {
         justifyContent: 'center',
       }}
     >
-      <Text
-        style={{
-          color: '#aaa',
-          fontSize: size * 0.38,
-          fontWeight: '700',
-        }}
-      >
+      <Text style={{ color: '#aaa', fontSize: size * 0.38, fontWeight: '700' }}>
         {upper.slice(0, 2) || '?'}
       </Text>
     </View>
@@ -174,7 +164,7 @@ function SignalCard({ signal, onPress }) {
     >
       <View style={styles.signalHeader}>
         <View style={styles.signalLeft}>
-          <TokenIcon symbol={signal.symbol} size={40} />
+          <TokenIcon symbol={signal.symbol} mint={signal.mint} size={40} />
           <View style={{ marginLeft: 12 }}>
             <Text
               style={[
@@ -269,6 +259,7 @@ function SentimentGauge({ score }) {
 
 function FeedScreen({
   signals,
+  brief,
   loading,
   onRefresh,
   onTokenPress,
@@ -323,12 +314,10 @@ function FeedScreen({
         <View style={styles.briefCard}>
           <Text style={styles.briefLabel}>INTELLIGENCE BRIEF</Text>
           <Text style={styles.briefText}>
-            {signals.filter((s) => s.type === 'CONVICTION_UP').length} conviction
-            increases and{' '}
-            {signals.filter((s) =>
-              ['CONVICTION_DOWN', 'SMART_MONEY_EXIT'].includes(s.type)
-            ).length}{' '}
-            warning signals detected in the last 24 hours.
+            {brief
+              ? `${brief.totalSignals24h} signals in 24h. Avg sentiment: ${brief.avgSentiment}.${brief.topInflows?.length ? ` Top inflows: ${brief.topInflows.map(t => t.symbol).join(', ')}.` : ''}`
+              : `${signals.filter((s) => s.type === 'CONVICTION_UP').length} conviction increases and ${signals.filter((s) => ['CONVICTION_DOWN', 'SMART_MONEY_EXIT'].includes(s.type)).length} warning signals detected.`
+            }
           </Text>
         </View>
 
@@ -413,7 +402,7 @@ function TokenScreen({ symbol, onBack }) {
         </TouchableOpacity>
 
         <View style={styles.tokenHeaderRow}>
-          <TokenIcon symbol={data.symbol} size={50} />
+          <TokenIcon symbol={data.symbol} mint={data.mint} size={50} />
           <View style={{ marginLeft: 14 }}>
             <Text style={styles.tokenSymbol}>{data.symbol}</Text>
             <Text style={styles.tokenPrice}>
@@ -465,27 +454,15 @@ function TokenScreen({ symbol, onBack }) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>HOLDER DISTRIBUTION</Text>
+          <Text style={styles.cardLabel}>SMART MONEY ACTIVITY</Text>
           {[
-            { l: 'Smart Money', v: data.holderDistribution?.smartMoney || 0, col: C.gold },
-            { l: 'Retail', v: data.holderDistribution?.retail || 0, col: C.blue },
-            { l: 'Exchange', v: data.holderDistribution?.exchange || 0, col: C.muted },
+            { l: 'Active Wallets', v: `${data.smartMoneyCount || 0} tracking`, col: C.gold },
+            { l: '1h Flow', v: fmt(data.netflow1h || 0), col: (data.netflow1h || 0) >= 0 ? C.green : C.red },
+            { l: '7d Flow', v: fmt(data.netflow7d || 0), col: (data.netflow7d || 0) >= 0 ? C.green : C.red },
           ].map((h) => (
-            <View key={h.l} style={styles.distRow}>
-              <View style={styles.distHeader}>
-                <Text style={styles.distLabel}>{h.l}</Text>
-                <Text style={[styles.distValue, { color: h.col }]}>
-                  {h.v.toFixed(1)}%
-                </Text>
-              </View>
-              <View style={styles.distBarBg}>
-                <View
-                  style={[
-                    styles.distBarFill,
-                    { width: `${h.v}%`, backgroundColor: h.col },
-                  ]}
-                />
-              </View>
+            <View key={h.l} style={styles.activityRow}>
+              <Text style={styles.distLabel}>{h.l}</Text>
+              <Text style={[styles.distValue, { color: h.col }]}>{h.v}</Text>
             </View>
           ))}
         </View>
@@ -495,7 +472,7 @@ function TokenScreen({ symbol, onBack }) {
             <Text style={styles.sectionLabel}>RECENT SIGNALS</Text>
             {data.recentSignals.map((s, i) => (
               <View key={i} style={styles.miniSignal}>
-                <TokenIcon symbol={s.symbol} size={28} />
+                <TokenIcon symbol={s.symbol} mint={s.mint} size={28} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={styles.miniSignalLabel}>{s.label}</Text>
                   <Text style={styles.miniSignalTime}>{timeAgo(s.timestamp)}</Text>
@@ -522,10 +499,10 @@ function AlertsScreen() {
       value: '75',
     },
     {
-      label: 'Large Inflow > $2M',
-      desc: 'Alert when smart money inflow exceeds $2M',
+      label: 'Large Inflow > $5K',
+      desc: 'Alert when smart money inflow exceeds $5K',
       type: 'inflow_above',
-      value: '2000000',
+      value: '5000',
     },
     {
       label: 'Smart Money Exit',
@@ -669,21 +646,34 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [selectedToken, setSelectedToken] = useState(null);
   const [walletAddress, setWalletAddress] = useState(null);
+  const [brief, setBrief] = useState(null);
 
-  const loadFeed = useCallback(async () => {
-    setLoading(true);
+  const loadFeed = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${API}/feed?limit=20`);
-      if (res.ok) {
-        const data = await res.json();
+      const [feedRes, briefRes] = await Promise.all([
+        fetch(`${API}/feed?limit=20`),
+        fetch(`${API}/brief`),
+      ]);
+      if (feedRes.ok) {
+        const data = await feedRes.json();
         if (data.signals?.length > 0) setSignals(data.signals);
       }
+      if (briefRes.ok) {
+        const data = await briefRes.json();
+        setBrief(data);
+      }
     } catch (e) {}
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => {
     loadFeed();
+  }, [loadFeed]);
+
+  useEffect(() => {
+    const interval = setInterval(() => loadFeed(true), 60000);
+    return () => clearInterval(interval);
   }, [loadFeed]);
 
   const connectWallet = useCallback(async () => {
@@ -767,6 +757,7 @@ export default function App() {
       {tab === 'feed' && (
         <FeedScreen
           signals={signals}
+          brief={brief}
           loading={loading}
           onRefresh={loadFeed}
           onTokenPress={onTokenPress}
@@ -1095,6 +1086,14 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
 
+  activityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
   distRow: { marginBottom: 12 },
   distHeader: {
     flexDirection: 'row',
