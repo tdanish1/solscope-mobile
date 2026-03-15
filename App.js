@@ -55,6 +55,19 @@ const LOCAL_TOKEN_ICONS = {
   WIF: require('./assets/tokens/wif.png'),
 };
 
+const TOP_TOKENS = [
+  { symbol: 'SOL', mint: 'So11111111111111111111111111111111111111112' },
+  { symbol: 'JUP', mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' },
+  { symbol: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+  { symbol: 'WIF', mint: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm' },
+  { symbol: 'PYTH', mint: 'HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3' },
+  { symbol: 'RAY', mint: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R' },
+  { symbol: 'JTO', mint: 'jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL' },
+  { symbol: 'DRIFT', mint: 'DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7' },
+  { symbol: 'ORCA', mint: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE' },
+  { symbol: 'RENDER', mint: 'rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof' },
+];
+
 const BRAND_LOGOS = {
   nansen: require('./assets/brands/nansen.png'),
   helius: require('./assets/brands/helius.png'),
@@ -143,6 +156,72 @@ const timeAgo = (ts) => {
   return Math.floor(s / 86400) + 'd ago';
 };
 
+
+function TopTokensRow({ onTokenPress }) {
+  const [tokens, setTokens] = useState([]);
+
+  useEffect(() => {
+    const mints = TOP_TOKENS.map(t => t.mint).join(',');
+    fetch(`https://api.dexscreener.com/latest/dex/tokens/${mints}`)
+      .then(r => r.json())
+      .then(data => {
+        const pairs = data.pairs || [];
+        const seen = new Set();
+        const results = [];
+        for (const t of TOP_TOKENS) {
+          if (seen.has(t.symbol)) continue;
+          const pair = pairs.find(p =>
+            p.chainId === 'solana' &&
+            (p.baseToken?.address === t.mint || p.baseToken?.symbol === t.symbol)
+          );
+          if (pair) {
+            seen.add(t.symbol);
+            results.push({
+              symbol: t.symbol,
+              mint: t.mint,
+              price: parseFloat(pair.priceUsd) || 0,
+              change24h: pair.priceChange?.h24 || 0,
+              imageUrl: pair.info?.imageUrl,
+            });
+          }
+        }
+        setTokens(results);
+      })
+      .catch(() => {});
+  }, []);
+
+  if (tokens.length === 0) return null;
+
+  return (
+    <View>
+      <Text style={styles.sectionLabel}>TOP SOLANA</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: 16 }}
+        style={{ marginBottom: 8 }}
+      >
+        {tokens.map(t => (
+          <TouchableOpacity
+            key={t.symbol}
+            onPress={() => onTokenPress(t.symbol)}
+            activeOpacity={0.7}
+            style={styles.topTokenCard}
+          >
+            <TokenIcon symbol={t.symbol} mint={t.mint} size={28} />
+            <Text style={styles.topTokenSymbol}>{t.symbol}</Text>
+            <Text style={styles.topTokenPrice}>
+              ${t.price < 0.01 ? t.price.toFixed(6) : t.price < 1 ? t.price.toFixed(4) : t.price.toFixed(2)}
+            </Text>
+            <Text style={[styles.topTokenChange, { color: t.change24h >= 0 ? C.green : C.red }]}>
+              {t.change24h >= 0 ? '+' : ''}{t.change24h.toFixed(1)}%
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
 
 function SignalCard({ signal, onPress }) {
   const positive =
@@ -321,7 +400,9 @@ function FeedScreen({
           </Text>
         </View>
 
-        <Text style={styles.sectionLabel}>LATEST SIGNALS</Text>
+        <TopTokensRow onTokenPress={onTokenPress} />
+
+        <Text style={styles.sectionLabel}>SMART MONEY SIGNALS</Text>
 
         {signals.map((s, i) => (
           <SignalCard key={s.id || i} signal={s} onPress={onTokenPress} />
@@ -899,6 +980,33 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 12,
     paddingLeft: 4,
+  },
+
+  topTokenCard: {
+    width: 100,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginRight: 10,
+    alignItems: 'center',
+    gap: 6,
+  },
+  topTokenSymbol: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.text,
+    letterSpacing: 0.3,
+  },
+  topTokenPrice: {
+    fontSize: 11,
+    color: C.muted,
+    fontWeight: '500',
+  },
+  topTokenChange: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   signalCard: {
