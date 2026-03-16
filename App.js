@@ -33,41 +33,46 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const API = 'https://solscope-production.up.railway.app/api';
 
-// Push notifications
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
+// Push notifications (gracefully no-op if native module not available)
 let pushToken = null;
+let notificationsAvailable = false;
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+  notificationsAvailable = true;
+} catch {}
 
 async function registerPushNotifications() {
-  if (!Device.isDevice) return null;
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== 'granted') return null;
+  if (!notificationsAvailable || !Device.isDevice) return null;
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return null;
 
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('signals', {
-      name: 'Smart Money Signals',
-      importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
-    });
-  }
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('signals', {
+        name: 'Smart Money Signals',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+      });
+    }
 
-  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-  const token = (await Notifications.getExpoPushTokenAsync(
-    projectId ? { projectId } : undefined
-  )).data;
-  pushToken = token;
-  return token;
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const token = (await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    )).data;
+    pushToken = token;
+    return token;
+  } catch { return null; }
 }
 
 async function syncWatchlistToBackend(watchlist) {
@@ -1378,6 +1383,7 @@ export default function App() {
 
   // Navigate to token when user taps a push notification
   useEffect(() => {
+    if (!notificationsAvailable) return;
     const sub = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
       if (data?.mint && data?.symbol) {
