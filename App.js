@@ -22,6 +22,9 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -29,6 +32,57 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const API = 'https://solscope-production.up.railway.app/api';
+
+// Push notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+let pushToken = null;
+
+async function registerPushNotifications() {
+  if (!Device.isDevice) return null;
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  let finalStatus = existing;
+  if (existing !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') return null;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('signals', {
+      name: 'Smart Money Signals',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+    });
+  }
+
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+  const token = (await Notifications.getExpoPushTokenAsync(
+    projectId ? { projectId } : undefined
+  )).data;
+  pushToken = token;
+  return token;
+}
+
+async function syncWatchlistToBackend(watchlist) {
+  if (!pushToken) return;
+  try {
+    await fetch(`${API}/watchlist/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pushToken,
+        mints: watchlist.map(t => t.mint).filter(Boolean),
+      }),
+    });
+  } catch {}
+}
 
 const C = {
   bg: '#08070c',
@@ -1278,7 +1332,6 @@ export default function App() {
   const [alertRules, setAlertRules] = useState([]);
   const [watchlist, setWatchlist] = useState([]);
 
-  // Load persisted data on mount
   useEffect(() => {
     (async () => {
       try {
@@ -1287,7 +1340,12 @@ export default function App() {
           AsyncStorage.getItem('solscope_watchlist'),
         ]);
         if (savedRules) setAlertRules(JSON.parse(savedRules));
-        if (savedWatchlist) setWatchlist(JSON.parse(savedWatchlist));
+        const wl = savedWatchlist ? JSON.parse(savedWatchlist) : [];
+        if (savedWatchlist) setWatchlist(wl);
+
+        // Register push notifications and sync initial watchlist
+        const token = await registerPushNotifications();
+        if (token && wl.length > 0) syncWatchlistToBackend(wl);
       } catch (e) {}
     })();
   }, []);
@@ -1309,6 +1367,7 @@ export default function App() {
       const exists = prev.find(t => t.mint === mint);
       const next = exists ? prev.filter(t => t.mint !== mint) : [...prev, { symbol, mint }];
       AsyncStorage.setItem('solscope_watchlist', JSON.stringify(next)).catch(() => {});
+      syncWatchlistToBackend(next);
       return next;
     });
   }, []);
@@ -1317,7 +1376,19 @@ export default function App() {
     return watchlist.some(t => t.mint === mint);
   }, [watchlist]);
 
-  // Android back button handler
+  // Navigate to token when user taps a push notification
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data?.mint && data?.symbol) {
+        setSelectedToken({ symbol: data.symbol, mint: data.mint });
+        setSourceTab(tab);
+        setTab('token');
+      }
+    });
+    return () => sub.remove();
+  }, [tab]);
+
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (tab === 'token' && selectedToken) {

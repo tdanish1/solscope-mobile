@@ -41,7 +41,15 @@
         }
       ]
     },
-    "plugins": [],
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#08070c",
+          "defaultChannel": "signals"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "b250f16b-3d8d-438a-988f-61c28fd37cc7"
