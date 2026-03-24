@@ -330,18 +330,47 @@ const timeAgo = (ts) => {
   return Math.floor(s / 86400) + 'd ago';
 };
 
-// Non-traceable flow labels (replaces exact dollar amounts)
-const flowLabel = (n) => {
-  if (n == null) return null;
+// Flow Intensity score (0-100): non-traceable derivative of raw flow data
+// 0 = max outflow, 50 = neutral, 100 = max inflow
+const flowScore = (n) => {
+  if (n == null) return 50;
+  const sign = n >= 0 ? 1 : -1;
   const a = Math.abs(n);
-  const dir = n >= 0 ? 'Inflow' : 'Outflow';
-  if (a >= 100000) return `Massive ${dir}`;
-  if (a >= 50000) return `Heavy ${dir}`;
-  if (a >= 10000) return `Strong ${dir}`;
-  if (a >= 1000) return `Moderate ${dir}`;
-  if (a > 0) return `Light ${dir}`;
-  return 'Neutral';
+  // Logarithmic curve: maps $0→0, $1K→20, $10K→40, $50K→60, $100K→75, $500K→90, $1M+→100
+  let magnitude = 0;
+  if (a > 0) magnitude = Math.min(50, Math.round(Math.log10(a / 100 + 1) * 18));
+  return Math.max(0, Math.min(100, 50 + sign * magnitude));
 };
+
+// Compact flow meter component
+function FlowMeter({ value, size = 'normal' }) {
+  const score = flowScore(value);
+  const isInflow = score > 50;
+  const isOutflow = score < 50;
+  const intensity = Math.abs(score - 50) / 50; // 0 to 1
+
+  const barWidth = size === 'small' ? 48 : 64;
+  const barHeight = size === 'small' ? 5 : 6;
+  const fontSize = size === 'small' ? 10 : 12;
+
+  const color = isInflow ? C.green : isOutflow ? C.red : C.dim;
+  const bgColor = isInflow ? C.greenSoft : isOutflow ? C.redSoft : C.surfaceLight;
+  const fillWidth = Math.max(2, intensity * barWidth);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <Text style={{ fontSize, fontWeight: '700', color, minWidth: size === 'small' ? 20 : 24, textAlign: 'right' }}>
+        {score}
+      </Text>
+      <View style={{ width: barWidth, height: barHeight, borderRadius: barHeight / 2, backgroundColor: bgColor, overflow: 'hidden', flexDirection: isOutflow ? 'row-reverse' : 'row' }}>
+        <View style={{
+          width: fillWidth, height: barHeight, borderRadius: barHeight / 2,
+          backgroundColor: color, opacity: 0.5 + intensity * 0.5,
+        }} />
+      </View>
+    </View>
+  );
+}
 
 // Non-traceable wallet count ranges
 const walletRange = (n) => {
@@ -521,25 +550,11 @@ function SignalCard({ signal, onPress }) {
       {signal.details && (
         <View style={styles.signalTags}>
           {signal.details.netflowUsd != null && (
-            <View
-              style={[
-                styles.tag,
-                {
-                  backgroundColor:
-                    signal.details.netflowUsd > 0 ? C.greenSoft : C.redSoft,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tagText,
-                  {
-                    color: signal.details.netflowUsd > 0 ? C.green : C.red,
-                  },
-                ]}
-              >
-                {flowLabel(signal.details.netflowUsd)}
-              </Text>
+            <View style={[styles.tag, { backgroundColor: C.surfaceLight, paddingVertical: 5 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 9, fontWeight: '600', color: C.muted, letterSpacing: 0.5 }}>FLOW</Text>
+                <FlowMeter value={signal.details.netflowUsd} size="small" />
+              </View>
             </View>
           )}
 
@@ -998,19 +1013,42 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
         {/* SMART MONEY ACTIVITY */}
         <View style={styles.card}>
           <Text style={styles.cardLabel}>SMART MONEY ACTIVITY</Text>
-          {[
-            { l: 'Active Wallets', v: data.hasSmartMoney ? `${walletRange(data.smartMoneyCount)} tracking` : '\u2014', col: data.hasSmartMoney ? C.gold : C.dim },
-            { l: 'Net Flow (24h)', v: data.hasSmartMoney ? flowLabel(data.netflowUsd || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflowUsd || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: '1h Flow', v: data.hasSmartMoney ? flowLabel(data.netflow1h || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow1h || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: '7d Flow', v: data.hasSmartMoney ? flowLabel(data.netflow7d || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow7d || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: 'Holdings Change', v: data.hasSmartMoney ? `${(data.holdingsChangePct || 0) > 0 ? '+' : ''}${(data.holdingsChangePct || 0).toFixed(1)}%` : '\u2014', col: data.hasSmartMoney ? ((data.holdingsChangePct || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: 'Confidence', v: data.hasSmartMoney ? (data.confidence || 'N/A') : '\u2014', col: data.hasSmartMoney ? C.text : C.dim },
-          ].map((h) => (
-            <View key={h.l} style={styles.activityRow}>
-              <Text style={styles.distLabel}>{h.l}</Text>
-              <Text style={[styles.distValue, { color: h.col }]}>{h.v}</Text>
-            </View>
-          ))}
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>Active Wallets</Text>
+            <Text style={[styles.distValue, { color: data.hasSmartMoney ? C.gold : C.dim }]}>
+              {data.hasSmartMoney ? `${walletRange(data.smartMoneyCount)} tracking` : '\u2014'}
+            </Text>
+          </View>
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>Net Flow (24h)</Text>
+            {data.hasSmartMoney ? <FlowMeter value={data.netflowUsd || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+          </View>
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>1h Flow</Text>
+            {data.hasSmartMoney ? <FlowMeter value={data.netflow1h || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+          </View>
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>7d Flow</Text>
+            {data.hasSmartMoney ? <FlowMeter value={data.netflow7d || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+          </View>
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>Holdings Change</Text>
+            <Text style={[styles.distValue, { color: data.hasSmartMoney ? ((data.holdingsChangePct || 0) >= 0 ? C.green : C.red) : C.dim }]}>
+              {data.hasSmartMoney ? `${(data.holdingsChangePct || 0) > 0 ? '+' : ''}${(data.holdingsChangePct || 0).toFixed(1)}%` : '\u2014'}
+            </Text>
+          </View>
+
+          <View style={styles.activityRow}>
+            <Text style={styles.distLabel}>Confidence</Text>
+            <Text style={[styles.distValue, { color: data.hasSmartMoney ? C.text : C.dim }]}>
+              {data.hasSmartMoney ? (data.confidence || 'N/A') : '\u2014'}
+            </Text>
+          </View>
         </View>
 
         {data.recentSignals?.length > 0 && (
@@ -1030,8 +1068,8 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
               const flowVal = s.details?.netflowUsd;
               const sentVal = s.details?.sentimentScore;
               const confVal = s.details?.confidence;
-              const detail = flowVal != null ? flowLabel(flowVal)
-                : sentVal != null ? `Sentiment: ${sentVal}`
+              const hasFlow = flowVal != null;
+              const textDetail = sentVal != null ? `Sentiment: ${sentVal}`
                 : confVal ? confVal : null;
               return (
                 <View key={i} style={[styles.miniSignal, {
@@ -1052,8 +1090,9 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
                     <Text style={[styles.miniSignalLabel, { color: accentColor }]}>{s.label}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
                       <Text style={styles.miniSignalTime}>{timeAgo(s.timestamp)}</Text>
-                      {detail && (
-                        <Text style={{ fontSize: 10, color: C.muted, fontWeight: '600' }}>{detail}</Text>
+                      {hasFlow && <FlowMeter value={flowVal} size="small" />}
+                      {!hasFlow && textDetail && (
+                        <Text style={{ fontSize: 10, color: C.muted, fontWeight: '600' }}>{textDetail}</Text>
                       )}
                     </View>
                   </View>
@@ -1213,9 +1252,7 @@ function WatchlistScreen({ watchlist, onTokenPress, onRemove }) {
                             {walletRange(sm.smartMoneyCount)} wallets
                           </Text>
                           {sm.netflowUsd !== 0 && (
-                            <Text style={{ fontSize: 10, color: sm.netflowUsd > 0 ? C.green : C.red }}>
-                              {flowLabel(sm.netflowUsd)}
-                            </Text>
+                            <FlowMeter value={sm.netflowUsd} size="small" />
                           )}
                         </View>
                       )}
