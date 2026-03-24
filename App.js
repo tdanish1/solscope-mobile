@@ -330,6 +330,29 @@ const timeAgo = (ts) => {
   return Math.floor(s / 86400) + 'd ago';
 };
 
+// Non-traceable flow labels (replaces exact dollar amounts)
+const flowLabel = (n) => {
+  if (n == null) return null;
+  const a = Math.abs(n);
+  const dir = n >= 0 ? 'Inflow' : 'Outflow';
+  if (a >= 100000) return `Massive ${dir}`;
+  if (a >= 50000) return `Heavy ${dir}`;
+  if (a >= 10000) return `Strong ${dir}`;
+  if (a >= 1000) return `Moderate ${dir}`;
+  if (a > 0) return `Light ${dir}`;
+  return 'Neutral';
+};
+
+// Non-traceable wallet count ranges
+const walletRange = (n) => {
+  if (n == null || n === 0) return null;
+  if (n <= 2) return '1-2';
+  if (n <= 5) return '3-5';
+  if (n <= 15) return '5-15';
+  if (n <= 30) return '15-30';
+  return '30+';
+};
+
 // ════════════════════════════════════════
 // TOP TOKENS ROW
 // ════════════════════════════════════════
@@ -515,7 +538,7 @@ function SignalCard({ signal, onPress }) {
                   },
                 ]}
               >
-                Flow: {fmt(signal.details.netflowUsd)}
+                {flowLabel(signal.details.netflowUsd)}
               </Text>
             </View>
           )}
@@ -947,7 +970,7 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>SM WALLETS</Text>
             <Text style={[styles.metricValue, { color: data.hasSmartMoney ? C.gold : C.dim }]}>
-              {data.hasSmartMoney ? `${data.smartMoneyCount || 0}` : '\u2014'}
+              {data.hasSmartMoney ? walletRange(data.smartMoneyCount) : '\u2014'}
             </Text>
             {data.hasSmartMoney && (
               <Text style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>tracking</Text>
@@ -976,10 +999,10 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
         <View style={styles.card}>
           <Text style={styles.cardLabel}>SMART MONEY ACTIVITY</Text>
           {[
-            { l: 'Active Wallets', v: data.hasSmartMoney ? `${data.smartMoneyCount || 0} tracking` : '\u2014', col: data.hasSmartMoney ? C.gold : C.dim },
-            { l: 'Net Flow (24h)', v: data.hasSmartMoney ? fmt(data.netflowUsd || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflowUsd || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: '1h Flow', v: data.hasSmartMoney ? fmt(data.netflow1h || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow1h || 0) >= 0 ? C.green : C.red) : C.dim },
-            { l: '7d Flow', v: data.hasSmartMoney ? fmt(data.netflow7d || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow7d || 0) >= 0 ? C.green : C.red) : C.dim },
+            { l: 'Active Wallets', v: data.hasSmartMoney ? `${walletRange(data.smartMoneyCount)} tracking` : '\u2014', col: data.hasSmartMoney ? C.gold : C.dim },
+            { l: 'Net Flow (24h)', v: data.hasSmartMoney ? flowLabel(data.netflowUsd || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflowUsd || 0) >= 0 ? C.green : C.red) : C.dim },
+            { l: '1h Flow', v: data.hasSmartMoney ? flowLabel(data.netflow1h || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow1h || 0) >= 0 ? C.green : C.red) : C.dim },
+            { l: '7d Flow', v: data.hasSmartMoney ? flowLabel(data.netflow7d || 0) : '\u2014', col: data.hasSmartMoney ? ((data.netflow7d || 0) >= 0 ? C.green : C.red) : C.dim },
             { l: 'Holdings Change', v: data.hasSmartMoney ? `${(data.holdingsChangePct || 0) > 0 ? '+' : ''}${(data.holdingsChangePct || 0).toFixed(1)}%` : '\u2014', col: data.hasSmartMoney ? ((data.holdingsChangePct || 0) >= 0 ? C.green : C.red) : C.dim },
             { l: 'Confidence', v: data.hasSmartMoney ? (data.confidence || 'N/A') : '\u2014', col: data.hasSmartMoney ? C.text : C.dim },
           ].map((h) => (
@@ -1007,7 +1030,7 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
               const flowVal = s.details?.netflowUsd;
               const sentVal = s.details?.sentimentScore;
               const confVal = s.details?.confidence;
-              const detail = flowVal != null ? `Flow: ${fmt(flowVal)}`
+              const detail = flowVal != null ? flowLabel(flowVal)
                 : sentVal != null ? `Sentiment: ${sentVal}`
                 : confVal ? confVal : null;
               return (
@@ -1187,11 +1210,11 @@ function WatchlistScreen({ watchlist, onTokenPress, onRemove }) {
                             {trendLabel}
                           </Text>
                           <Text style={{ fontSize: 10, color: C.dim }}>
-                            {sm.smartMoneyCount} wallet{sm.smartMoneyCount !== 1 ? 's' : ''}
+                            {walletRange(sm.smartMoneyCount)} wallets
                           </Text>
                           {sm.netflowUsd !== 0 && (
                             <Text style={{ fontSize: 10, color: sm.netflowUsd > 0 ? C.green : C.red }}>
-                              {sm.netflowUsd > 0 ? '+' : ''}{fmt(sm.netflowUsd)}
+                              {flowLabel(sm.netflowUsd)}
                             </Text>
                           )}
                         </View>
