@@ -991,7 +991,7 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
           </View>
 
           <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>LIQUIDITY</Text>
+            <Text style={styles.metricLabel}>DEX LIQUIDITY</Text>
             <Text style={styles.metricValue}>{fmt(data.liquidity || 0)}</Text>
           </View>
 
