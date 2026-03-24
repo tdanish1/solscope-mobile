@@ -22,10 +22,6 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { transact } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
-
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -33,10 +29,17 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const API = 'https://solscope-production.up.railway.app/api';
 
-// Push notifications (gracefully no-op if native module not available)
+// Push notifications (gracefully no-op if native modules not available)
+let Notifications = null;
+let Device = null;
+let Constants = null;
 let pushToken = null;
 let notificationsAvailable = false;
 try {
+  Notifications = require('expo-notifications');
+  Device = require('expo-device');
+  Constants = require('expo-constants');
+  if (Constants.default) Constants = Constants.default;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -150,6 +153,20 @@ const BRAND_LOGOS = {
   nansen: require('./assets/brands/nansen.png'),
   helius: require('./assets/brands/helius.png'),
   jupiter: require('./assets/brands/jupiter.png'),
+};
+
+// ════════════════════════════════════════
+// SIGNAL EMOJI MAP (client-side fallback)
+// ════════════════════════════════════════
+const SIGNAL_EMOJI = {
+  CONVICTION_UP: '\uD83D\uDD25',
+  CONVICTION_DOWN: '\u26A0\uFE0F',
+  SMART_MONEY_ENTRY: '\uD83D\uDC0B',
+  SMART_MONEY_EXIT: '\uD83D\uDEAA',
+  SENTIMENT_SPIKE: '\u26A1',
+  WHALE_ALERT: '\uD83D\uDEA8',
+  NEW_TOKEN_DISCOVERY: '\uD83C\uDD95',
+  LIQUIDITY_RISK: '\uD83D\uDD3B',
 };
 
 // ════════════════════════════════════════
@@ -398,12 +415,16 @@ function TopTokensRow({ onTokenPress }) {
 
 function SignalCard({ signal, onPress }) {
   const positive =
-    ['CONVICTION_UP', 'SMART_MONEY_ENTRY'].includes(signal.type) ||
-    (signal.type === 'SENTIMENT_SPIKE' && signal.details?.delta > 0);
+    ['CONVICTION_UP', 'SMART_MONEY_ENTRY', 'NEW_TOKEN_DISCOVERY'].includes(signal.type) ||
+    (signal.type === 'SENTIMENT_SPIKE' && signal.details?.delta > 0) ||
+    (signal.type === 'WHALE_ALERT' && signal.details?.direction === 'BUY');
 
-  const negative = ['CONVICTION_DOWN', 'SMART_MONEY_EXIT'].includes(signal.type);
+  const negative =
+    ['CONVICTION_DOWN', 'SMART_MONEY_EXIT'].includes(signal.type) ||
+    (signal.type === 'WHALE_ALERT' && signal.details?.direction === 'SELL');
   const strength = getSignalStrength(signal);
   const isNew = Date.now() - signal.timestamp < 30 * 60 * 1000;
+  const emoji = signal.emoji || SIGNAL_EMOJI[signal.type] || '';
 
   return (
     <TouchableOpacity
@@ -413,6 +434,8 @@ function SignalCard({ signal, onPress }) {
         styles.signalCard,
         {
           borderColor: positive ? C.greenBorder : negative ? C.redBorder : C.border,
+          borderLeftColor: positive ? C.green : negative ? C.red : C.gold,
+          backgroundColor: positive ? '#0a1210' : negative ? '#120a0a' : C.surface,
         },
       ]}
     >
@@ -421,24 +444,37 @@ function SignalCard({ signal, onPress }) {
           <TokenIcon symbol={signal.symbol} mint={signal.mint} size={40} />
           <View style={{ marginLeft: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text
-                style={[
-                  styles.signalType,
-                  { color: positive ? C.green : negative ? C.red : C.gold },
-                ]}
-              >
-                {signal.label?.toUpperCase()}
-              </Text>
-              {/* Signal strength bars */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 1.5 }}>
-                {[1, 2, 3].map(i => (
-                  <View key={i} style={{
-                    width: 3, height: 4 + i * 3, borderRadius: 1,
-                    backgroundColor: i <= strength
-                      ? (positive ? C.green : negative ? C.red : C.gold)
-                      : C.dim + '40',
-                  }} />
-                ))}
+              <View style={{
+                backgroundColor: positive ? C.greenSoft : negative ? C.redSoft : C.goldSoft,
+                borderWidth: 1,
+                borderColor: positive ? C.greenBorder : negative ? C.redBorder : C.goldBorder,
+                paddingHorizontal: 7,
+                paddingVertical: 3,
+                borderRadius: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+              }}>
+                {emoji ? <Text style={{ fontSize: 10 }}>{emoji}</Text> : null}
+                <Text
+                  style={[
+                    styles.signalType,
+                    { color: positive ? C.green : negative ? C.red : C.gold },
+                  ]}
+                >
+                  {signal.label?.toUpperCase()}
+                </Text>
+                {/* Signal strength bars */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 1.5 }}>
+                  {[1, 2, 3].map(i => (
+                    <View key={i} style={{
+                      width: 3, height: 4 + i * 3, borderRadius: 1,
+                      backgroundColor: i <= strength
+                        ? (positive ? C.green : negative ? C.red : C.gold)
+                        : C.dim + '40',
+                    }} />
+                  ))}
+                </View>
               </View>
             </View>
             <Text style={styles.signalSymbol}>{signal.symbol}</Text>
@@ -894,18 +930,6 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
         {/* MARKET DATA */}
         <View style={styles.metricsGrid}>
           <View style={styles.metricCard}>
-            <Text style={styles.metricLabel}>PRICE (24H)</Text>
-            <Text
-              style={[
-                styles.metricValue,
-                { color: priceUp ? C.green : C.red },
-              ]}
-            >
-              {priceUp ? '+' : ''}{(data.priceChange24h || 0).toFixed(1)}%
-            </Text>
-          </View>
-
-          <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>VOLUME (24H)</Text>
             <Text style={styles.metricValue}>{fmt(data.volume24h || 0)}</Text>
           </View>
@@ -918,6 +942,16 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>MARKET CAP</Text>
             <Text style={styles.metricValue}>{fmt(data.marketCap || 0)}</Text>
+          </View>
+
+          <View style={styles.metricCard}>
+            <Text style={styles.metricLabel}>SM WALLETS</Text>
+            <Text style={[styles.metricValue, { color: data.hasSmartMoney ? C.gold : C.dim }]}>
+              {data.hasSmartMoney ? `${data.smartMoneyCount || 0}` : '\u2014'}
+            </Text>
+            {data.hasSmartMoney && (
+              <Text style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>tracking</Text>
+            )}
           </View>
         </View>
 
@@ -959,15 +993,50 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
         {data.recentSignals?.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>RECENT SIGNALS</Text>
-            {data.recentSignals.map((s, i) => (
-              <View key={i} style={styles.miniSignal}>
-                <TokenIcon symbol={s.symbol} mint={s.mint} size={28} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.miniSignalLabel}>{s.label}</Text>
-                  <Text style={styles.miniSignalTime}>{timeAgo(s.timestamp)}</Text>
+            {data.recentSignals.map((s, i) => {
+              const isBullish =
+                ['CONVICTION_UP', 'SMART_MONEY_ENTRY', 'NEW_TOKEN_DISCOVERY'].includes(s.type) ||
+                (s.type === 'SENTIMENT_SPIKE' && (s.details?.delta || 0) > 0) ||
+                (s.type === 'WHALE_ALERT' && s.details?.direction === 'BUY');
+              const isBearish =
+                ['CONVICTION_DOWN', 'SMART_MONEY_EXIT'].includes(s.type) ||
+                (s.type === 'WHALE_ALERT' && s.details?.direction === 'SELL');
+              const accentColor = isBullish ? C.green : isBearish ? C.red : C.gold;
+              const bgColor = isBullish ? '#0a1210' : isBearish ? '#120a0a' : C.surface;
+              const signalEmoji = s.emoji || SIGNAL_EMOJI[s.type] || '';
+              const flowVal = s.details?.netflowUsd;
+              const sentVal = s.details?.sentimentScore;
+              const confVal = s.details?.confidence;
+              const detail = flowVal != null ? `Flow: ${fmt(flowVal)}`
+                : sentVal != null ? `Sentiment: ${sentVal}`
+                : confVal ? confVal : null;
+              return (
+                <View key={i} style={[styles.miniSignal, {
+                  borderLeftWidth: 3,
+                  borderLeftColor: accentColor,
+                  backgroundColor: bgColor,
+                }]}>
+                  <View style={{
+                    width: 28, height: 28, borderRadius: 14,
+                    backgroundColor: isBullish ? C.greenSoft : isBearish ? C.redSoft : C.goldSoft,
+                    alignItems: 'center', justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: isBullish ? C.greenBorder : isBearish ? C.redBorder : C.goldBorder,
+                  }}>
+                    <Text style={{ fontSize: 13 }}>{signalEmoji || (isBullish ? '\u25B2' : isBearish ? '\u25BC' : '\u25C6')}</Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={[styles.miniSignalLabel, { color: accentColor }]}>{s.label}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                      <Text style={styles.miniSignalTime}>{timeAgo(s.timestamp)}</Text>
+                      {detail && (
+                        <Text style={{ fontSize: 10, color: C.muted, fontWeight: '600' }}>{detail}</Text>
+                      )}
+                    </View>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
 
@@ -1186,6 +1255,18 @@ function AlertsScreen({ rules, setRules }) {
       desc: 'Alert when sentiment falls below 30',
       type: 'sentiment_below',
       value: '30',
+    },
+    {
+      label: '\uD83D\uDEA8 Whale Alert',
+      desc: 'Alert when a whale moves >$50K in a single token',
+      type: 'whale_alert',
+      value: 'any',
+    },
+    {
+      label: '\uD83C\uDD95 New Discovery',
+      desc: 'Alert when smart money discovers a new token',
+      type: 'new_token_discovery',
+      value: 'any',
     },
   ];
 
@@ -1725,6 +1806,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: C.surface,
     borderWidth: 1,
+    borderLeftWidth: 3,
     marginBottom: 12,
   },
   signalHeader: {
