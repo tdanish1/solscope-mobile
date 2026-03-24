@@ -342,31 +342,49 @@ const flowScore = (n) => {
   return Math.max(0, Math.min(100, 50 + sign * magnitude));
 };
 
-// Compact flow meter component
+// Compact flow meter component — bar fills from center outward
 function FlowMeter({ value, size = 'normal' }) {
   const score = flowScore(value);
   const isInflow = score > 50;
   const isOutflow = score < 50;
   const intensity = Math.abs(score - 50) / 50; // 0 to 1
 
-  const barWidth = size === 'small' ? 48 : 64;
+  const halfWidth = size === 'small' ? 24 : 32;
   const barHeight = size === 'small' ? 5 : 6;
   const fontSize = size === 'small' ? 10 : 12;
+  const totalWidth = halfWidth * 2;
 
   const color = isInflow ? C.green : isOutflow ? C.red : C.dim;
-  const bgColor = isInflow ? C.greenSoft : isOutflow ? C.redSoft : C.surfaceLight;
-  const fillWidth = Math.max(2, intensity * barWidth);
+  const fillWidth = Math.max(1, intensity * halfWidth);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
       <Text style={{ fontSize, fontWeight: '700', color, minWidth: size === 'small' ? 20 : 24, textAlign: 'right' }}>
         {score}
       </Text>
-      <View style={{ width: barWidth, height: barHeight, borderRadius: barHeight / 2, backgroundColor: bgColor, overflow: 'hidden', flexDirection: isOutflow ? 'row-reverse' : 'row' }}>
-        <View style={{
-          width: fillWidth, height: barHeight, borderRadius: barHeight / 2,
-          backgroundColor: color, opacity: 0.5 + intensity * 0.5,
-        }} />
+      <View style={{ width: totalWidth, height: barHeight, borderRadius: barHeight / 2, backgroundColor: C.surfaceLight, overflow: 'hidden', flexDirection: 'row' }}>
+        {/* Left half (outflow fills right-to-left) */}
+        <View style={{ width: halfWidth, height: barHeight, flexDirection: 'row', justifyContent: 'flex-end' }}>
+          {isOutflow && (
+            <View style={{
+              width: fillWidth, height: barHeight,
+              backgroundColor: C.red, opacity: 0.5 + intensity * 0.5,
+              borderTopLeftRadius: barHeight / 2, borderBottomLeftRadius: barHeight / 2,
+            }} />
+          )}
+        </View>
+        {/* Center tick */}
+        <View style={{ width: 1, height: barHeight, backgroundColor: C.dim, opacity: 0.4 }} />
+        {/* Right half (inflow fills left-to-right) */}
+        <View style={{ width: halfWidth, height: barHeight, flexDirection: 'row' }}>
+          {isInflow && (
+            <View style={{
+              width: fillWidth, height: barHeight,
+              backgroundColor: C.green, opacity: 0.5 + intensity * 0.5,
+              borderTopRightRadius: barHeight / 2, borderBottomRightRadius: barHeight / 2,
+            }} />
+          )}
+        </View>
       </View>
     </View>
   );
@@ -1023,17 +1041,23 @@ function TokenScreen({ symbol, mint, onBack, backLabel, isWatchlisted, onToggleW
 
           <View style={styles.activityRow}>
             <Text style={styles.distLabel}>Net Flow (24h)</Text>
-            {data.hasSmartMoney ? <FlowMeter value={data.netflowUsd || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            <View style={{ alignItems: 'flex-end' }}>
+              {data.hasSmartMoney ? <FlowMeter value={data.netflowUsd || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            </View>
           </View>
 
           <View style={styles.activityRow}>
             <Text style={styles.distLabel}>1h Flow</Text>
-            {data.hasSmartMoney ? <FlowMeter value={data.netflow1h || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            <View style={{ alignItems: 'flex-end' }}>
+              {data.hasSmartMoney ? <FlowMeter value={data.netflow1h || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            </View>
           </View>
 
           <View style={styles.activityRow}>
             <Text style={styles.distLabel}>7d Flow</Text>
-            {data.hasSmartMoney ? <FlowMeter value={data.netflow7d || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            <View style={{ alignItems: 'flex-end' }}>
+              {data.hasSmartMoney ? <FlowMeter value={data.netflow7d || 0} /> : <Text style={[styles.distValue, { color: C.dim }]}>{'\u2014'}</Text>}
+            </View>
           </View>
 
           <View style={styles.activityRow}>
@@ -1293,25 +1317,25 @@ function WatchlistScreen({ watchlist, onTokenPress, onRemove }) {
 function AlertsScreen({ rules, setRules }) {
   const exampleRules = [
     {
-      label: 'Conviction Above 75',
+      label: '\uD83D\uDD25 Conviction Above 75',
       desc: 'Alert when any token sentiment > 75',
       type: 'sentiment_above',
       value: '75',
     },
     {
-      label: 'Large Inflow > $5K',
+      label: '\uD83D\uDC0B Large Inflow',
       desc: 'Alert when smart money inflow exceeds $5K',
       type: 'inflow_above',
       value: '5000',
     },
     {
-      label: 'Smart Money Exit',
+      label: '\uD83D\uDEAA Smart Money Exit',
       desc: 'Alert on all smart money exit signals',
       type: 'smart_money_exit',
       value: 'any',
     },
     {
-      label: 'Sentiment Drop Below 30',
+      label: '\u26A0\uFE0F Sentiment Drop',
       desc: 'Alert when sentiment falls below 30',
       type: 'sentiment_below',
       value: '30',
